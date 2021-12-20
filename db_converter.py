@@ -71,17 +71,20 @@ def parse(input_filename, output_filename):
         logging.flush()
         line = line.encode('utf8').decode('utf8').strip().replace(
             r"\\", "WUBWUBREALSLASHWUB").replace(r"\'", "''").replace("WUBWUBREALSLASHWUB", r"\\")
+
         # Ignore comment lines
         if line.startswith("--") or line.startswith("/*") or line.startswith("LOCK TABLES") or line.startswith("UNLOCK TABLES") or not line:
             continue
 
         # Outside of anything handling
         if current_table is None:
+
             # Start of a table creation statement?
             if line.startswith("CREATE TABLE"):
                 current_table = line.split('"')[1]
                 tables[current_table] = {"columns": []}
                 creation_lines = []
+
             # Inserting data into a table?
             elif line.startswith("INSERT INTO"):
                 # PostgreSQL doesn't support 0000-00-00 00:00:00 timestamp and convertion to null is not an option.
@@ -89,9 +92,11 @@ def parse(input_filename, output_filename):
                 output.write(line.encode("utf8").decode('utf8').replace(
                     "'0000-00-00 00:00:00'", "TO_TIMESTAMP(0)").replace(r"\0", "") + "\n")
                 num_inserts += 1
+
             # ???
             elif line.startswith("DROP TABLE"):
                 output.write(line.encode("utf8").decode('utf8') + "\n")
+
             else:
                 print("\n ! Unknown line in main body: %s" % line)
 
@@ -118,39 +123,51 @@ def parse(input_filename, output_filename):
                 # See if it needs type conversion
                 final_type = None
                 set_sequence = None
+
                 if type.startswith("tinyint("):
                     type = "INT4"
                     set_sequence = True
-                    final_type = "BOOLEAN"
+
                 elif type.startswith("int(") or type.startswith("mediumint("):
                     type = "INTEGER"
                     set_sequence = True
+
                 elif type.startswith("bigint("):
                     type = "BIGINT"
                     set_sequence = True
+
                 elif type == "longtext":
                     type = "TEXT"
+
                 elif type == "mediumtext":
                     type = "TEXT"
+
                 elif type == "tinytext":
                     type = "TEXT"
+
                 elif type.startswith("varchar("):
                     size = int(type.split("(")[1].rstrip(")"))
                     type = "VARCHAR(%s)" % (size * 2)
+
                 elif type.startswith("smallint("):
                     type = "INT2"
                     set_sequence = True
+
                 elif type == "datetime" or type == "timestamp":
                     type = "TIMESTAMP WITH TIME ZONE"
                     extra = extra.replace(
                         "DEFAULT '0000-00-00 00:00:00'", "DEFAULT TO_TIMESTAMP(0)")
+
                 elif type == "double":
                     type = "DOUBLE PRECISION"
+
                 elif type.endswith("blob"):
                     type = "BYTEA"
+
                 elif type.endswith("current_timestamp("):
                     type = type.replace(
                         "current_timestamp(", "CURRENT_TIMESTAMP")
+
                 elif type.startswith("enum(") or type.startswith("set("):
 
                     types_str = type.split("(")[1].rstrip(")").rstrip('"')
@@ -171,6 +188,7 @@ def parse(input_filename, output_filename):
                 if final_type:
                     cast_lines.append("ALTER TABLE \"%s\" ALTER COLUMN \"%s\" DROP DEFAULT, ALTER COLUMN \"%s\" TYPE %s USING CAST(\"%s\" as %s)" % (
                         current_table, name, name, final_type, name, final_type))
+
                 # ID fields need sequences [if they are integers?]
                 if name == "id" and set_sequence is True:
                     sequence_lines.append(
@@ -184,19 +202,22 @@ def parse(input_filename, output_filename):
                 # Record it
                 creation_lines.append('"%s" %s %s' % (name, type, extra))
                 tables[current_table]['columns'].append((name, type, extra))
+
             # Is it a constraint or something?
             elif line.startswith("PRIMARY KEY"):
                 creation_lines.append(line.rstrip(","))
+
             elif line.startswith("CONSTRAINT"):
                 foreign_key_lines.append("ALTER TABLE \"%s\" ADD CONSTRAINT %s DEFERRABLE INITIALLY DEFERRED" % (
                     current_table, line.split("CONSTRAINT")[1].strip().rstrip(",")))
                 foreign_key_lines.append("CREATE INDEX ON \"%s\" %s" % (current_table, line.split(
                     "FOREIGN KEY")[1].split("REFERENCES")[0].strip().rstrip(",")))
+
             elif line.startswith("UNIQUE KEY"):
                 creation_lines.append("UNIQUE (%s)" %
                                       line.split("(")[1].split(")")[0])
-            elif line.startswith("FULLTEXT KEY"):
 
+            elif line.startswith("FULLTEXT KEY"):
                 fulltext_keys = " || ' ' || ".join(line.split(
                     '(')[-1].split(')')[0].replace('"', '').split(','))
                 fulltext_key_lines.append("CREATE INDEX ON %s USING gin(to_tsvector('english', %s))" % (
