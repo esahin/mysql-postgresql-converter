@@ -18,7 +18,7 @@ mysqldump --compatible=postgresql --default-character-set=utf8 -r databasename.m
 
 Then, convert it using the dbconverter.py script
 
-`python db_converter.py databasename.mysql databasename.psql`
+`python3 db_converter.py databasename.mysql databasename.psql`
 
 It'll print progress to the terminal.
 
